@@ -1,0 +1,59 @@
+cargo-features = ["edition"]
+
+[package]
+edition = "2018"
+name = "mojo"
+version = "0.1.0"
+authors = ["Clay Molocznik <clay@mojo.run>"]
+build = "build.rs"
+
+[lib]
+crate_type = ["cdylib", "rlib"]
+
+[dependencies]
+cesu8 = "1.1.0"
+combine = "2.5.2"
+jni-sys = "0.3.0"
+log = "0.4"
+env_logger = "0.5"
+smallvec = "0.6"
+time = "0.1.40"
+
+libc = "0.2"
+jemallocator = "0.1.9"
+jemalloc-ctl = "0.2.0"
+futures = "0.1"
+bytes = "0.4"
+actix = "0.7"
+#actix-web = { version = "0.7", features = ["brotli", "flate2", "tls", "openssl", "rust-tls"] }
+actix-web = { version = "0.7" }
+actix-redis = "0.5"
+http = "0.1"
+h2 = "0.1"
+#openssl = "0.10"
+tokio-openssl = "0.2"
+tokio-rustls = "0.7"
+
+[target.'cfg(unix)'.dependencies]
+nix = "0.11"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["basetsd", "handleapi", "memoryapi", "minwindef", "std", "sysinfoapi"] }
+kernel32-sys = "0.2"
+
+[build-dependencies]
+walkdir = "2"
+gcc = "0.3"
+
+[dependencies.error-chain]
+default-features = false
+version = "0.11.0"
+
+[dev-dependencies]
+lazy_static = "1"
+tempdir = "0.3"
+
+[features]
+invocation = []
+backtrace = ["error-chain/backtrace"]
+default = ["backtrace"]
