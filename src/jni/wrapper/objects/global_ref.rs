@@ -60,11 +60,15 @@ impl GlobalRef {
     ///
     /// This borrows the ref and prevents it from being dropped as long as the
     /// JObject sticks around.
+    #[inline]
     pub fn as_obj<'a>(&'a self) -> JObject<'a> {
         self.inner.as_obj()
     }
 
-
+    #[inline]
+    pub fn as_obj_env<'a>(&'a self) -> Option<(crate::jni::JNIEnv, JObject<'a>)> {
+        self.inner.as_obj_env()
+    }
 }
 
 

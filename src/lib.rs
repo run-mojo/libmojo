@@ -43,7 +43,7 @@ use crate::jni::sys::{jbyteArray, jint, jlong, jobject, jstring};
 use futures::Future;
 use futures::future::result;
 use std::mem;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -85,7 +85,7 @@ pub fn run() {
         });
 
         // Create arbiter.
-        let mut arbiter = MojoArbiter::new(AppState{});
+        let mut arbiter = MojoArbiter::new(AppState {});
 
         mojo.add_arbiter(arbiter.start());
 
@@ -93,6 +93,7 @@ pub fn run() {
         drop(mojo);
 
         let addr = jvm::Timer { dur: Duration::new(1, 0) }.start();
+
 
         // Return app.
         app
@@ -143,10 +144,6 @@ pub fn run() {
     system.run();
 }
 
-pub enum GCHandleActorMessage {
-    Jvm(jvm::GCHandle),
-    Net(),
-}
 
 pub struct MojoApp {
     loops: Vec<std::sync::Arc<Addr<MojoArbiter>>>,
@@ -155,7 +152,7 @@ pub struct MojoApp {
 impl MojoApp {
     pub fn new() -> MojoApp {
         MojoApp {
-            loops: Vec::with_capacity(128),
+            loops: Vec::with_capacity(128), // TODO: num_cpus
         }
     }
 
@@ -172,6 +169,7 @@ impl MojoApp {
 
 pub struct AppState {}
 
+/// Single-threaded handle to a JavaVM. Detaches thread when dropped.
 pub struct JVM {
     vm: crate::jni::JavaVM,
     thread: std::thread::Thread,
@@ -189,8 +187,6 @@ impl Drop for JVM {
 pub trait GCObject {}
 
 pub trait GCHandle {}
-
-pub struct JvmActorHandle {}
 
 /// Provides additional arbiter services for Mojo related things.
 /// In charge of attaching to JVM or .NET Core.
@@ -268,3 +264,251 @@ impl actix::Handler<JvmAttach> for MojoArbiter {
         self.attach_jvm(msg.vm);
     }
 }
+
+
+////////////////////////////////////////////////////////////////////////////////
+// MojoActor
+////////////////////////////////////////////////////////////////////////////////
+
+///
+pub enum MojoActorProxy {
+    Nil,
+    // Java uses "JNIEnv->NewGlobalRef()" to pin in the GC.
+    // When an actor is stopped this pin is released allowing the GC to
+    // collect as long as the app has no other references. Standard practice
+    // is to never share references to the Actor object itself.
+    // The number of actor proxies is usually low and mostly have 'static
+    // lifetimes / live for the duration of the app. A common pattern is the
+    // Action pattern with a "reset()" state instead of stopping and starting
+    // a new actor.
+    Jvm(jvm::GCHandle),
+    // GCHandle is used to pin inside GC.
+    // .NET has value types which allows for a very lightweight integration.
+    Net(usize),
+    // Go can use "unsafe.Pointer"
+    Go(usize),
+    // Swift can use raw pointers.
+    Swift(usize),
+}
+
+
+/// General purpose
+pub struct MojoActor {
+    handle: MojoActorProxy
+}
+
+impl Actor for MojoActor {
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut <Self as Actor>::Context) {
+        match self.handle {
+            MojoActorProxy::Jvm(ref mut handle) => {
+                // TODO: call-> run.mojo.actor.MetalActor.started0()
+                if let Some((env, obj)) = handle.as_obj_env() {
+//env.get_method_id()
+//                    env.call_method_unsafe(obj, )
+                } else {
+                    // TODO: Wtf? Let's crash the Actor and let the supervisor restart if necessary.
+                }
+            }
+            _ => {}
+        }
+        // TODO: Call managed lifecycle.
+        unimplemented!()
+    }
+
+    fn stopping(&mut self, ctx: &mut <Self as Actor>::Context) -> Running {
+        unimplemented!()
+    }
+
+    fn stopped(&mut self, ctx: &mut <Self as Actor>::Context) {
+        unimplemented!()
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// MojoActorMessage
+////////////////////////////////////////////////////////////////////////////////
+
+///
+pub enum MojoActorMessage {
+    Nil,
+    Jvm(jvm::GCHandle),
+    Net(u64),
+    Bytes(bytes::Bytes),
+    BytesMut(bytes::BytesMut),
+}
+
+///
+impl actix::Message for MojoActorMessage {
+    type Result = MojoActorMessage;
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// MojoActorRequest
+////////////////////////////////////////////////////////////////////////////////
+
+/// Requests create an Async MessageResponse.
+pub enum MojoActorRequest {
+    Jvm(jvm::GCHandle),
+//    Bytes(bytes::Bytes),
+//    BytesMut(bytes::BytesMut),
+}
+
+impl MojoActorRequest {
+    pub fn invoke(&self) {
+        match *self {
+            MojoActorRequest::Jvm(ref handle) => {}
+            _ => {}
+        }
+    }
+}
+
+
+///
+pub enum MojoActorResult {
+    Nil,
+    Jvm(jvm::GCHandle),
+}
+
+///
+impl actix::Message for MojoActorRequest {
+    type Result = Result<MojoActorResult, ()>;
+}
+
+
+///
+impl actix::Handler<MojoActorRequest> for MojoActor {
+    type Result = Response<MojoActorResult, ()>;
+
+    fn handle(&mut self, msg: MojoActorRequest, ctx: &mut Context<Self>) -> Self::Result {
+        match msg {
+            MojoActorRequest::Jvm(handle) => {
+                // Invoke.
+
+                // Create oneshot channel.
+                let (sender, receiver) =
+                    futures::oneshot::<Self::Result>();
+
+                // Listen for result.
+                return Response::future(receiver
+                    .map(|r| MojoActorResult::Nil)
+                    .map_err(|e| ())
+                );
+            }
+            _ => {}
+        }
+//        unimplemented!("");
+        Response::reply(Ok(MojoActorResult::Nil))
+    }
+}
+
+
+enum ResponseTypeItem<I, E> {
+    Result(Result<I, E>),
+    Fut(Box<Future<Item=I, Error=E>>),
+}
+
+/// Helper type for representing different type of message responses
+pub struct Response<I, E> {
+    item: ResponseTypeItem<I, E>,
+}
+
+impl<I, E> Response<I, E> {
+    /// Create async response
+    pub fn future<T>(fut: T) -> Self
+        where
+            T: Future<Item=I, Error=E> + 'static {
+        Response {
+            item: ResponseTypeItem::Fut(Box::new(fut)),
+        }
+    }
+
+    /// Create response
+    pub fn reply(val: Result<I, E>) -> Self {
+        Response {
+            item: ResponseTypeItem::Result(val),
+        }
+    }
+}
+
+impl<A, M, I: 'static, E: 'static> MessageResponse<A, M> for Response<I, E>
+    where
+        A: Actor,
+        M: Message<Result=Result<I, E>>,
+        A::Context: AsyncContext<A>,
+{
+    fn handle<R: ResponseChannel<M>>(self, _: &mut A::Context, tx: Option<R>) {
+        match self.item {
+            ResponseTypeItem::Fut(fut) => {
+                Arbiter::spawn(fut.then(move |res| {
+                    if let Some(tx) = tx {
+                        tx.send(res);
+                    }
+                    Ok(())
+                }));
+            }
+            ResponseTypeItem::Result(res) => {
+                if let Some(tx) = tx {
+                    tx.send(res);
+                }
+            }
+        }
+    }
+}
+
+
+//enum ActorResponseTypeItem<A, I, E> {
+//    Result(Result<I, E>),
+//    Fut(Box<ActorFuture<Item = I, Error = E, Actor = A>>),
+//}
+//
+///// Helper type for representing different type of message responses
+//pub struct ActorResponse<A, I, E> {
+//    item: ActorResponseTypeItem<A, I, E>,
+//}
+//
+//impl<A: Actor, I, E> ActorResponse<A, I, E> {
+//    /// Create response
+//    pub fn reply(val: Result<I, E>) -> Self {
+//        ActorResponse {
+//            item: ActorResponseTypeItem::Result(val),
+//        }
+//    }
+//
+//    /// Create async response
+//    pub fn later<T>(fut: T) -> Self
+//        where
+//            T: ActorFuture<Item = I, Error = E, Actor = A> + 'static,
+//    {
+//        ActorResponse {
+//            item: ActorResponseTypeItem::Fut(Box::new(fut)),
+//        }
+//    }
+//}
+//
+//impl<A, M, I: 'static, E: 'static> MessageResponse<A, M> for ActorResponse<A, I, E>
+//    where
+//        A: Actor,
+//        M: Message<Result = Result<I, E>>,
+//        A::Context: AsyncContext<A>,
+//{
+//    fn handle<R: ResponseChannel<M>>(self, ctx: &mut A::Context, tx: Option<R>) {
+//        match self.item {
+//            ActorResponseTypeItem::Fut(fut) => {
+//                ctx.spawn(fut.then(move |res, _, _| {
+//                    if let Some(tx) = tx {
+//                        tx.send(res)
+//                    }
+//                    actix::fut::ok(())
+//                }));
+//            }
+//            ActorResponseTypeItem::Result(res) => {
+//                if let Some(tx) = tx {
+//                    tx.send(res);
+//                }
+//            }
+//        }
+//    }
+//}

@@ -12,11 +12,11 @@ use crate::jni::JNIEnv;
 // They carry extra lifetime information to prevent them escaping this context
 // and getting used after being GC'd.
 use crate::jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
-use crate::jni::signature::JavaType;
+use crate::jni::signature::{JavaType, Primitive};
 // This is just a pointer. We'll be returning it from our function.
 // We can't return one of the objects with lifetime information because the
 // lifetime checker won't let us.
-use crate::jni::sys::{jbyteArray, jint, jlong, jstring, jobject};
+use crate::jni::sys::{jbyteArray, jint, jlong, jstring, jobject, jmethodID};
 use crate::jni::{JavaVM};
 use std::mem;
 use std::sync::mpsc;
@@ -29,6 +29,25 @@ pub type GCHandle = GlobalRef;
 pub type JavaCallback = Box<FnOnce()>;
 
 
+static mut method_id_run_mojo_actor_Actor_started0: jmethodID = std::ptr::null_mut();
+
+pub fn run_mojo_actor_Actor_started0(handle: GCHandle) {
+    unsafe {
+        let method_id = method_id_run_mojo_actor_Actor_started0;
+
+        if let Some((env, obj)) = handle.as_obj_env() {
+//            env.call_method_unsafe(
+//                obj,
+//                method_id,
+//                JavaType::Primitive(Primitive::Void),
+//                &[]
+//            );
+//                    env.call_method_unsafe(obj, )
+        } else {
+            // TODO: Wtf? Let's crash the Actor and let the supervisor restart if necessary.
+        }
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // HttpResponse Body
@@ -201,7 +220,6 @@ impl actix::Handler<Ping> for Timer {
 
 pub struct Timer {
     pub dur: Duration,
-//    sender: std::cell::RefCell<futures::sync::oneshot::Sender<HttpResponse>>,
 }
 
 impl Actor for Timer {
