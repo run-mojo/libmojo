@@ -10,7 +10,7 @@ use std::ptr;
 use super::InitArgs;
 
 /// The invocation API.
-pub struct JavaVM(*mut sys::JavaVM);
+pub struct JavaVM(pub *mut sys::JavaVM);
 
 unsafe impl Send for JavaVM {}
 unsafe impl Sync for JavaVM {}
@@ -62,6 +62,14 @@ impl JavaVM {
                 java_vm: self,
                 env: env,
             })
+        }
+    }
+
+    pub fn detach_current_thread(&self) -> Result<()> {
+        unsafe {
+            let res = java_vm_unchecked!(self.0, DetachCurrentThread);
+            jni_error_code_to_result(res)?;
+            Ok(())
         }
     }
 

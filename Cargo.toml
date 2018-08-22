@@ -33,6 +33,7 @@ h2 = "0.1"
 #openssl = "0.10"
 tokio-openssl = "0.2"
 tokio-rustls = "0.7"
+tokio-timer = "0.2"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.11"

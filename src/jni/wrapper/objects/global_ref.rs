@@ -63,6 +63,8 @@ impl GlobalRef {
     pub fn as_obj<'a>(&'a self) -> JObject<'a> {
         self.inner.as_obj()
     }
+
+
 }
 
 
@@ -82,6 +84,23 @@ impl GlobalRefGuard {
     /// JObject sticks around.
     pub fn as_obj<'a>(&'a self) -> JObject<'a> {
         self.obj
+    }
+
+    pub fn as_obj_env<'a>(&'a self) -> Option<(crate::jni::JNIEnv, JObject<'a>)> {
+        match self.vm.get_env() {
+            Ok(env) => Some((env, self.obj)),
+            Err(_) => {
+                match self.vm.attach_current_thread() {
+                    Ok(env) => {
+                        match self.vm.get_env() {
+                            Ok(env) => Some((env, self.obj)),
+                            Err(_) => None
+                        }
+                    }
+                    Err(_) => None
+                }
+            }
+        }
     }
 }
 
